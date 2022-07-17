@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset=utf-8>
+    <title>Vasúti terepasztal - Nagybeadandó - Fehér Ferenc Mátyás - MR34UH</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { width: 100%; height: 100% }
+        #hallgato {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            color: saddlebrown;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        #info {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            color: saddlebrown;
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div id="hallgato">
+    Fehér Ferenc Mátyás - MR34UH - Programtervező informatikus - 5. félév
+</div>
+<div id="info">
+    Kurzor - Terep körbejárása, csúszka használata, illetve módok, fények ki/be kapcsolása.
+    <br>
+    I - Információk eltüntetése/megjelenítése.
+</div>
+<script type="module">
+    import * as THREE from './js-r132/build/three.module.js';
+    import { TrackballControls } from './js-r132/examples/jsm/controls/TrackballControls.js';
+    import { OBJLoader } from './js-r132/examples/jsm/loaders/OBJLoader.js';
+    import { GUI } from './js-r132/examples/jsm/libs/dat.gui.module.js';
+
+    // Globális változók.
+    var WIDTH, HEIGHT, aspectRatio;
+    var renderer;
+    var scene, camera;
+    var ctrl, controls;
+    var cx = -49.75;
+    var train = new THREE.Group();
+    var trainWheel, trainWheel1, trainWheel2, trainWheel3, trainWheel4, trainWheel5, trainWheel6, trainWheel7;
+    var pylon;
+    var board;
+    var train2;
+    var train3;
+    var ambientLight, pLight, sLight, pylonLight1,  pylonLight2, pylonLight3, pylonLight4, pylonLight5;
+
+
+
+    function addControlGui(controlObject) {
+        var gui = new GUI({autoPlace: false});
+        gui.add(controlObject, 'positionTrain', -45, 45).name('Vonat pozíció');
+        gui.add(controlObject, 'sceneColorNightButton').name('Éjszakai mód').onChange(function(e) {
+            scene.background = new THREE.Color(0x000000);
+        })
+        gui.add(controlObject, 'sceneColorDayButton').name('Nappali  mód').onChange(function(e) {
+            scene.background = new THREE.Color(0xcae6ed);
+        })
+        gui.add(controlObject, 'ambientL').name('Ambiens fény');
+        gui.add(controlObject, 'reflectorL').name('Reflektor fény');
+        gui.add(controlObject, 'pointL').name('Pont fény');
+        gui.add(controlObject, 'lamps').name('Lámpák');
+
+        gui.domElement.style.position = 'absolute';
+        gui.domElement.style.bottom = '0px';
+        gui.domElement.style.right = '0px';
+        document.body.appendChild(gui.domElement);
+    }
+
+    var meshController = function () {
+        this.positionTrain = 0;
+        this.sceneColorNightButton = function() {
+            console.log('sceneColorNightButton pressed!')
+        };
+        this.sceneColorDayButton = function() {
+            console.log('sceneColorDayButton pressed!')
+        };
+        this.pointL = true;
+        this.ambientL = true;
+        this.reflectorL = true;
+        this.lamps = true;
+    };
+
+    var loader = new OBJLoader();
+    var loader2 = new OBJLoader();
+    var loaderTrain = new OBJLoader();
+    loader.load('./assets/models/pylon.obj',
+        // Modell betöltése utáni függvény
+        function(loaded) {
+            // A loaded egy THREE.Group objektum lesz, amelynek a gyermeke(i) a mesh(-ek)!
+            pylon = loaded;
+            pylon.scale.set(0.5, 0.5, 0.5);
+            pylon.position.set(-19, 0.4, 7)
+
+            // Anyag hozzárendelés
+            pylon.traverse(function (child) {
+                if (child instanceof THREE.Mesh) {
+                    console.log('mesh found in loaded group');
+                    child.material = new THREE.MeshLambertMaterial({color: 0x8a8a8a, side: THREE.DoubleSide});
+                }
+            });
+        },
+        // Betöltés előrehaladása közben hívódik
+        function(xhr) {
+            console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+        },
+        // Hibás betöltés esetén
+        function(error) {
+            console.log('An error happened!', error.currentTarget.statusText, error.currentTarget.responseURL);
+        });
+
+    loaderTrain.load('./assets/models/train.obj',
+        // Modell betöltése utáni függvény
+        function(loaded) {
+            // A loaded egy THREE.Group objektum lesz, amelynek a gyermeke(i) a mesh(-ek)!
+            train3 = loaded;
+            train3.scale.set(1, 1, 1);
+            train3.rotateY(-Math.PI / 2);
+            train3.position.set(17.5, 1.95, -1.5);
+
+            // Anyag hozzárendelés
+            train3.traverse(function (child) {
+                if (child instanceof THREE.Mesh) {
+                    console.log('mesh found in loaded group');
+                    child.material = new THREE.MeshLambertMaterial({color: 0x8a8a8a, side: THREE.DoubleSide});
+                }
+            });
+
+            init();
+        },
+        // Betöltés előrehaladása közben hívódik
+        function(xhr) {
+            console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+        },
+        // Hibás betöltés esetén
+        function(error) {
+            console.log('An error happened!', error.currentTarget.statusText, error.currentTarget.responseURL);
+        });
+
+    loader2.load('./assets/models/board.obj',
+        // Modell betöltése utáni függvény
+        function(loaded) {
+            // A loaded egy THREE.Group objektum lesz, amelynek a gyermeke(i) a mesh(-ek)!
+            board = loaded;
+            board.scale.set(0.8, 0.8, 0.8);
+            board.position.set(15, 0.4, 7.8);
+            board.rotateY(Math.PI / 2);
+
+            // Anyag hozzárendelés
+            board.traverse(function (child) {
+                if (child instanceof THREE.Mesh) {
+                    console.log('mesh found in loaded group');
+                    child.material = new THREE.MeshLambertMaterial({color: 0x8a8a8a, side: THREE.DoubleSide});
+                }
+            });
+        },
+        // Betöltés előrehaladása közben hívódik
+        function(xhr) {
+            console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+        },
+        // Hibás betöltés esetén
+        function(error) {
+            console.log('An error happened!', error.currentTarget.statusText, error.currentTarget.responseURL);
+        });
+
+    function init() {
+        // Böngésző ablakméret lekérése és méretarány számítása.
+        HEIGHT = window.innerHeight;
+        WIDTH = window.innerWidth;
+        aspectRatio = WIDTH / HEIGHT;
+
+        // Színtér létrehozása
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xcae6ed);
+
+        // Renderer létrehozása és DOM-hoz adása
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(WIDTH, HEIGHT);
+        renderer.setClearColor(0x000000, 1);
+        document.body.appendChild(renderer.domElement);
+        renderer.shadowMap.enabled = true;
+
+        // Kamera létrehozása és vetítési paramétereinek beállítása.
+        camera = new THREE.PerspectiveCamera(75, aspectRatio, 0.1, 1000);
+        camera.position.set(0, 30, 50);
+        camera.lookAt( scene.position );
+
+        document.addEventListener("keydown", function(){
+            var x = event.keyCode || event.which;
+            if(x === 73) {
+                var y = document.getElementById("info");
+                if (y.style.display === "block") {
+                    document.getElementById("info").style.display = "none";
+                } else {
+                    document.getElementById("info").style.display = "block";
+                }
+
+                var z = document.getElementById("hallgato");
+                if (z.style.display === "block") {
+                    document.getElementById("hallgato").style.display = "none";
+                } else {
+                    document.getElementById("hallgato").style.display = "block";
+                }
+            }
+        })
+
+        // Objektumok létrehozása.
+        var pylon2 = pylon.clone();
+        var pylon3 = pylon.clone();
+        var pylon4 = pylon.clone();
+        var pylon5 = pylon.clone();
+        var pylon6 = pylon.clone();
+        var board2 = board.clone();
+        var board3 = board.clone();
+        var board4 = board.clone();
+        board2.position.set(-15, 0.4, 7.5);
+        board3.position.set(-15, 0.4, -11);
+        board4.position.set(12, 0.4, -11);
+        pylon2.position.set(19, 0.4, 7);
+        pylon3.position.set(-19, 0.4, -3.5);
+        pylon4.position.set(19, 0.4, -3.5);
+        pylon5.position.set(-19, 0.4, -13);
+        pylon6.position.set(19, 0.4, -13);
+        scene.add(pylon2);
+        scene.add(pylon3);
+        scene.add(pylon5);
+        scene.add(pylon6);
+        scene.add(pylon);
+        scene.add(board);
+        scene.add(train3);
+        scene.add(board2);
+        scene.add(board3);
+        scene.add(board4);
+        createMeshes();
+
+        // Fények
+        // Ambiens
+        ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+        scene.add(ambientLight);
+        // Pont
+        pLight = new THREE.PointLight(0xffffff, 0.2);
+        pLight.position.set(50, 50, -50);
+        pLight.castShadow = true;
+        scene.add(pLight);
+        // Reflektor
+        sLight = new THREE.SpotLight(0xffffff, 0.2);
+        sLight.position.set(50, 50, -50);
+        sLight.angle = Math.PI / 16;
+        sLight.target = scene;
+        sLight.castShadow = true;
+        scene.add(sLight);
+
+        // Lámpák.
+        pylonLight1 = new THREE.PointLight(0xffffff, 1);
+        pylonLight1.position.set(19, 4.5, 7);
+        pylonLight1.castShadow = true;
+        scene.add(pylonLight1);
+
+        pylonLight2 = new THREE.PointLight(0xffffff, 1);
+        pylonLight2.position.set(-19, 4.5, 7);
+        pylonLight2.castShadow = true;
+        scene.add(pylonLight2);
+
+        pylonLight3 = new THREE.PointLight(0xffffff, 1);
+        pylonLight3.position.set(-19, 4.5, -3.5);
+        pylonLight3.castShadow = true;
+        scene.add(pylonLight3);
+
+        pylonLight4 = new THREE.PointLight(0xffffff, 1);
+        pylonLight4.position.set(-19, 4.5, -13);
+        pylonLight4.castShadow = true;
+        scene.add(pylonLight4);
+
+        pylonLight5 = new THREE.PointLight(0xffffff, 1);
+        pylonLight5.position.set(19, 4.5, -13);
+        pylonLight5.castShadow = true;
+        scene.add(pylonLight5);
+
+        // Két segédgeometria
+        // var pLightHelper = new THREE.PointLightHelper( pLight );
+        //scene.add(  pLightHelper )
+        // var sLightHelper = new THREE.SpotLightHelper( sLight );
+        // scene.add( sLightHelper )
+        ctrl = new meshController();
+        addControlGui(ctrl);
+        // Az ablak későbbi átméretezése esetén visszahívható függvény megadása
+        window.addEventListener('resize', handleWindowResize, false);
+
+        // Kamera vezérlés
+        controls = new TrackballControls( camera, renderer.domElement );
+        controls.rotateSpeed = 5.0;
+        controls.panSpeed = 1.0;
+
+        animate();
+    }
+
+    function handleWindowResize() {
+        // Az ablak átméretezése esetén a kamera vetítési paraméterek újraszámolása
+        HEIGHT = window.innerHeight;
+        WIDTH = window.innerWidth;
+        console.log( 'WIDTH=' + WIDTH + '; HEIGHT=' + HEIGHT );
+        renderer.setSize( WIDTH, HEIGHT );
+        aspectRatio = WIDTH / HEIGHT;
+        camera.aspect = aspectRatio;
+        camera.updateProjectionMatrix();
+
+        render();
+    }
+
+    function animate() {
+        // Újabb képkocka rajzolásának kérése.
+        // Maximálisan 60 FPS-t biztosít a rendszer.
+        requestAnimationFrame(animate);
+        // Kameramozgás vezérlése
+
+        train2.position.x = ctrl.positionTrain;
+
+        if(ctrl.ambientL === false) {
+            ambientLight.visible = false;
+        } else if(ctrl.ambientL) {
+            ambientLight.visible = true;
+        }
+
+        if(ctrl.pointL === false) {
+            pLight.visible = false;
+        } else if(ctrl.pointL) {
+            pLight.visible = true;
+        }
+
+        if(ctrl.reflectorL === false) {
+            sLight.visible = false;
+        } else if(ctrl.reflectorL) {
+            sLight.visible = true;
+        }
+
+        if(ctrl.lamps === false) {
+            pylonLight1.visible = false;
+            pylonLight2.visible = false;
+            pylonLight3.visible = false;
+            pylonLight4.visible = false;
+            pylonLight5.visible = false;
+        } else if(ctrl.lamps) {
+            pylonLight1.visible = true;
+            pylonLight2.visible = true;
+            pylonLight3.visible = true;
+            pylonLight4.visible = true;
+            pylonLight5.visible = true;
+        }
+
+        controls.update();
+        // Új képkocka rajzolása
+        if(train.position.x < 0) {
+            train.position.x += 0.1;
+            trainWheel.rotation.y -= 0.1;
+            trainWheel1.rotation.y -= 0.1;
+            trainWheel2.rotation.y -= 0.1;
+            trainWheel3.rotation.y -= 0.1;
+            trainWheel4.rotation.y -= 0.1;
+            trainWheel5.rotation.y -= 0.1;
+            trainWheel6.rotation.y -= 0.1;
+            trainWheel7.rotation.y -= 0.1;
+        }
+
+        render();
+    }
+
+    function createLights() {
+
+    }
+
+    function createMeshes() {
+        var materials = createMaterials();
+        var geometries = createGeometries();
+
+        var groundMesh = new THREE.Mesh(geometries.groundGeometry, materials.groundMaterial );
+        groundMesh.rotation.x = -1.0 * THREE.MathUtils.degToRad( 90 );
+        groundMesh.receiveShadow = true;
+        scene.add(groundMesh);
+
+        // Sín.
+        var railway = new THREE.Group();
+        railway.receiveShadow = true;
+        railway.castShadow = true;
+        scene.add(railway);
+
+        var way1 = new THREE.Mesh(geometries.way1Geometry, materials.way1Material);
+        way1.position.set(0, 0, 9.2);
+        way1.rotateY(Math.PI / 2);
+        railway.add(way1);
+
+        var way2 = new THREE.Mesh(geometries.way2Geometry, materials.way2Material);
+        way2.position.set(0, 0, 10.2);
+        way2.rotateY(Math.PI / 2);
+        railway.add(way2);
+
+        for(var i = 0; i < 67; i++) {
+            var crossWay = new THREE.Mesh(geometries.crossWayGeometry, materials.crossWayMaterial);
+            crossWay.position.set(0, 0, 9.7);
+            crossWay.position.x = cx;
+            railway.add(crossWay);
+            cx += 1.5;
+        }
+
+        var railway2 = railway.clone();
+        railway2.position.set(0, 0, -25.5);
+        railway2.receiveShadow = true;
+        railway2.castShadow = true;
+        scene.add(railway2);
+
+        var railway3 = railway.clone();
+        railway3.position.set(0, 0, 5);
+        railway3.receiveShadow = true;
+        railway3.castShadow = true;
+        scene.add(railway3);
+
+        // Vonat.
+        train.position.set(-45, -0.20, 0);
+        train.receiveShadow = true;
+        train.castShadow = true;
+        scene.add(train);
+
+        var trainBody = new THREE.Mesh(geometries.trainBodyGeometry, materials.trainBodyMaterial);
+        trainBody.position.set(0,2.75,9.7);
+        train.add(trainBody);
+
+        trainWheel = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel.position.set(3.5, 1.1, 9.2);
+        trainWheel.rotateX(Math.PI / 2);
+        train.add(trainWheel);
+
+        trainWheel1 = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel1.position.set(2.65, 1.1, 9.2);
+        trainWheel1.rotateX(Math.PI / 2);
+        train.add(trainWheel1);
+
+        trainWheel2 = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel2.position.set(2.65, 1.1, 10.2);
+        trainWheel2.rotateX(Math.PI / 2);
+        train.add(trainWheel2);
+
+        trainWheel3 = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel3.position.set(3.5, 1.1, 10.2);
+        trainWheel3.rotateX(Math.PI / 2);
+        train.add(trainWheel3);
+
+        trainWheel4 = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel4.position.set(-2.65, 1.1, 10.2);
+        trainWheel4.rotateX(Math.PI / 2);
+        train.add(trainWheel4);
+
+        trainWheel5 = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel5.position.set(-3.5, 1.1, 10.2);
+        trainWheel5.rotateX(Math.PI / 2);
+        train.add(trainWheel5);
+
+        trainWheel6 = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel6.position.set(-2.65, 1.1, 9.2);
+        trainWheel6.rotateX(Math.PI / 2);
+        train.add(trainWheel6);
+
+        trainWheel7 = new THREE.Mesh(geometries.trainWheelGeometry, materials.trainWheelMaterial);
+        trainWheel7.position.set(-3.5, 1.1, 9.2);
+        trainWheel7.rotateX(Math.PI / 2);
+        train.add(trainWheel7);
+
+        var trainBodyPart1 = new THREE.Mesh(geometries.trainBodyPart1Geometry, materials.trainBodyPart1Material);
+        trainBodyPart1.position.set(3.075,1.3,9.7);
+        train.add(trainBodyPart1);
+
+        var trainBodyPart2 = new THREE.Mesh(geometries.trainBodyPart1Geometry, materials.trainBodyPart1Material);
+        trainBodyPart2.position.set(-3.075,1.3,9.7);
+        train.add(trainBodyPart2);
+
+        var trainBodyPart3 = new THREE.Mesh(geometries.trainBodyPart3Geometry, materials.trainBodyPart3Material);
+        trainBodyPart3.position.set(4.4,1.3,9.7);
+        train.add(trainBodyPart3);
+
+        var trainBodyPart4 = new THREE.Mesh(geometries.trainBodyPart3Geometry, materials.trainBodyPart3Material);
+        trainBodyPart4.position.set(-4.4,1.3,9.7);
+        train.add(trainBodyPart4);
+
+        var trainBodyPart5 = new THREE.Mesh(geometries.trainBodyPart5Geometry, materials.trainBodyPart5Material);
+        trainBodyPart5.position.set(0,1.3,9.7);
+        train.add(trainBodyPart5);
+
+        train2 = train.clone();
+        train2.position.set(-45, -0.20, -25.5);
+        train2.receiveShadow = true;
+        train2.castShadow = true;
+        scene.add(train2);
+
+        // Épületrész
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry1, materials.boxMaterial1);
+        boxMesh.position.set(0, 5, 0);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        // Épületrész 1
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry2, materials.boxMaterial2);
+        boxMesh.position.set(-8, 3, 0);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        // Épületrész 2
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry2, materials.boxMaterial2);
+        boxMesh.position.set(8, 3, 0);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        // Tető
+        var cylinderMesh = new THREE.Mesh(geometries.cylinderGeometry,materials.cylinderMaterial);
+        cylinderMesh.position.set(0, 11.5, 0);
+        cylinderMesh.castShadow = true;
+        cylinderMesh.receiveShadow = true;
+        scene.add(cylinderMesh);
+
+        // Tető 2
+        var coneMesh = new THREE.Mesh(geometries.coneGeometry, materials.coneMaterial);
+        coneMesh.rotateY(Math.PI / 4);
+        coneMesh.position.set( -8.25, 7.5, 0 );
+        coneMesh.castShadow = true;
+        coneMesh.receiveShadow = true;
+        scene.add(coneMesh);
+
+        // Tető 3
+        var coneMesh = new THREE.Mesh(geometries.coneGeometry, materials.coneMaterial);
+        coneMesh.rotateY(Math.PI / 4);
+        coneMesh.position.set( 8.25, 7.5, 0 );
+        coneMesh.castShadow = true;
+        coneMesh.receiveShadow = true;
+        scene.add( coneMesh );
+
+        // Oszlop csoport
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry5, materials.boxMaterial5);
+        boxMesh.position.set(2, 5, 5.5);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry5, materials.boxMaterial5);
+        boxMesh.position.set(-2, 5, 5.5);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        // Oszlop csoport 2
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry5, materials.boxMaterial5);
+        boxMesh.position.set(2, 5, -5.5);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry5, materials.boxMaterial5);
+        boxMesh.position.set(-2, 5, -5.5);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        // Új geometria, mely árnyékot vet a talajra és a korábbi objektumra
+        // Épület
+        var boxMesh = new THREE.Mesh(geometries.boxGeometry6, materials.boxMaterial6);
+        boxMesh.position.set(16, 8, -10.5);
+        boxMesh.castShadow = true;
+        boxMesh.receiveShadow = true;
+        scene.add(boxMesh);
+
+        // Tető az új geometriára.
+        var coneMesh = new THREE.Mesh(geometries.coneGeometry2, materials.coneMaterial2);
+        coneMesh.rotateY( Math.PI / 4 );
+        coneMesh.position.set( 16, 18, -10.5 );
+        coneMesh.castShadow = true;
+        coneMesh.receiveShadow = true;
+        scene.add(coneMesh);
+
+        // Éplületek alatti talaj.
+        var ground = new THREE.Mesh(geometries.boxGeometry, materials.boxMaterial);
+        ground.castShadow = true;
+        ground.receiveShadow = true;
+        ground.position.set(0, 0.5, -3)
+        scene.add(ground);
+    }
+
+    function createGeometries() {
+        var groundGeometry = new THREE.PlaneGeometry(100, 100);
+        var way1Geometry = new THREE.BoxGeometry(0.1, 1, 100, 1, 1, 1);
+        var way2Geometry = new THREE.BoxGeometry(0.1, 1, 100, 1, 1, 1);
+        var crossWayGeometry = new THREE.BoxGeometry(0.5, 0.6, 2, 1, 1, 1);
+        var trainBodyGeometry = new THREE.BoxGeometry(10,2.5,2.25,1,1,1);
+        var trainWheelGeometry = new THREE.CylinderBufferGeometry(0.4, 0.4, 0.2, 16);
+        var trainBodyPart1Geometry = new THREE.BoxGeometry(1.8,0.5,0.8,1,1,1);
+        var trainBodyPart3Geometry = new THREE.BoxGeometry(0.9,0.5,2,1,1,1);
+        var trainBodyPart5Geometry = new THREE.BoxGeometry(4.4,0.5,2,1,1,1);
+        var boxGeometry1 = new THREE.BoxGeometry(8, 10, 8, 8, 10, 6);
+        var boxGeometry2 = new THREE.BoxGeometry(8, 6, 8, 8, 6, 6);
+        var boxGeometry3 = new THREE.BoxGeometry(24, 1, 30, 24, 1, 30);
+        var cylinderGeometry = new THREE.CylinderGeometry(1, 7, 3, 8, 10)
+        var coneGeometry = new THREE.ConeGeometry(7, 3, 4, 10);
+        var boxGeometry4 = new THREE.BoxGeometry(2, 1, 23, 2, 1, 23);
+        var boxGeometry5 = new THREE.BoxGeometry(1, 10, 1, 1, 10, 1);
+        var boxGeometry6 = new THREE.BoxGeometry(4, 16, 4, 4, 16, 4);
+        var coneGeometry2 = new THREE.ConeGeometry(4, 4, 4, 10);
+        var boxGeometry7 = new THREE.BoxGeometry(8, 1, 8, 8, 1, 8);
+        var boxGeometry = new THREE.BoxGeometry(40, 1, 23, 40, 1, 23);
+
+        return {
+            groundGeometry,
+            way1Geometry,
+            way2Geometry,
+            crossWayGeometry,
+            trainBodyGeometry,
+            trainWheelGeometry,
+            trainBodyPart1Geometry,
+            trainBodyPart3Geometry,
+            trainBodyPart5Geometry,
+            boxGeometry1,
+            boxGeometry2,
+            boxGeometry3,
+            cylinderGeometry,
+            coneGeometry,
+            boxGeometry4,
+            boxGeometry5,
+            boxGeometry6,
+            coneGeometry2,
+            boxGeometry7,
+            boxGeometry,
+        };
+    }
+
+    function createMaterials() {
+        // Textúra létrehozása.
+        var textureLoader = new THREE.TextureLoader();
+        var texture = textureLoader.load('./assets/textures/grass.jpeg')
+        texture.receiveShadow = true;
+        texture.castShadow = true;
+        var texture2 = textureLoader.load('./assets/textures/pavingstone.jpg')
+        texture2.receiveShadow = true;
+        texture2.castShadow = true;
+        var groundMaterial = new THREE.MeshPhongMaterial( {
+            color: 0x008000,
+            wireframe: false,
+            side: THREE.DoubleSide,
+            specular: 0xffffff,
+            map: texture
+        } );
+        var way1Material = new THREE.MeshLambertMaterial({color: 0x646464, wireframe: false});
+        var way2Material = new THREE.MeshLambertMaterial({color: 0x646464, wireframe: false});
+        var crossWayMaterial = new THREE.MeshLambertMaterial({color: 0x2A1305, wireframe: false});
+        var trainBodyMaterial = new THREE.MeshLambertMaterial({color: 0x474F74, wireframe: false});
+        var trainWheelMaterial = new THREE.MeshLambertMaterial({color: 0x000000, wireframe: false});
+        var trainBodyPart1Material = new THREE.MeshLambertMaterial({color: 0x4C4646, wireframe: false});
+        var trainBodyPart3Material = new THREE.MeshLambertMaterial({color: 0x4C4646, wireframe: false});
+        var trainBodyPart5Material = new THREE.MeshLambertMaterial({color: 0x4C4646, wireframe: false});
+        var boxMaterial1 = new THREE.MeshLambertMaterial({ color: 0xf5f0a6, wireframe: false });
+        var boxMaterial2 = new THREE.MeshLambertMaterial({color: 0xf5f0a6, wireframe: false});
+        var boxMaterial3 = new THREE.MeshLambertMaterial({color: 0x93a397, wireframe: false});
+        var cylinderMaterial = new THREE.MeshLambertMaterial({color: 0x0b2c2e , wireframe:false});
+        var coneMaterial = new THREE.MeshLambertMaterial({color: 0x0b2c2e, wireframe: false});
+        var boxMaterial4 = new THREE.MeshLambertMaterial({color: 0x93a397, wireframe: false});
+        var boxMaterial5 = new THREE.MeshLambertMaterial({color: 0xa9c5c7, wireframe: false});
+        var boxMaterial6 = new THREE.MeshLambertMaterial({color: 0xf5f0a6, wireframe: false});
+        var coneMaterial2 = new THREE.MeshLambertMaterial({color: 0x0b2c2e, wireframe: false});
+        var boxMaterial7 = new THREE.MeshLambertMaterial({color: 0x93a397, wireframe: false});
+        var boxMaterial = new THREE.MeshLambertMaterial({color: 0x93a397, wireframe: false, map: texture2});
+
+        return {
+            groundMaterial,
+            way1Material,
+            way2Material,
+            crossWayMaterial,
+            trainBodyMaterial,
+            trainWheelMaterial,
+            trainBodyPart1Material,
+            trainBodyPart3Material,
+            trainBodyPart5Material,
+            boxMaterial1,
+            boxMaterial2,
+            boxMaterial3,
+            cylinderMaterial,
+            coneMaterial,
+            boxMaterial4,
+            boxMaterial5,
+            boxMaterial6,
+            coneMaterial2,
+            boxMaterial7,
+            boxMaterial
+        };
+    }
+
+    function render() {
+        // 3D -> 2D vetített kép kiszámítása.
+        // scene 3D színtér képe a camera kamera szemszögéből.
+        renderer.render(scene, camera);
+    }
+</script>
+</body>
+</html>
